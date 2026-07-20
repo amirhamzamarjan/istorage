@@ -729,11 +729,6 @@
     document.getElementById('reportDate').value = todayStr;
     document.getElementById('dateDisplay').textContent = formatDateFull(todayStr);
 
-    // Load demo data if inventory is empty
-    if (getInventory().length === 0) {
-      loadDemoData();
-    }
-
     // ── Navigation ──
     document.querySelectorAll('.nav-link').forEach(function (link) {
       link.addEventListener('click', function () { navigateTo(this.dataset.section); });
@@ -1032,37 +1027,6 @@
       renderDashboard();
       renderReportPreview();
     });
-  }
-
-  // ── Demo Data ──────────────────────────────────────────────
-  function loadDemoData() {
-    // Create persistent inventory models with quantities
-    var inventory = [
-      { id: generateId(), model: 'iPhone 11 Pro', desk: 1, service: 0, outside: 0 },
-      { id: generateId(), model: 'iPhone 12 Pro', desk: 2, service: 0, outside: 1 },
-      { id: generateId(), model: 'iPhone 13', desk: 6, service: 0, outside: 0 },
-      { id: generateId(), model: 'iPhone 13 Pro Max', desk: 2, service: 0, outside: 0 },
-      { id: generateId(), model: 'iPhone 14 Pro Max', desk: 1, service: 1, outside: 0 },
-      { id: generateId(), model: 'iPhone 15 Pro', desk: 3, service: 0, outside: 0 },
-      { id: generateId(), model: 'iPhone 15 Pro Max', desk: 2, service: 0, outside: 0 },
-    ];
-    saveInventory(inventory);
-
-    // Create today's movement log
-    var d = today();
-    var movements = [
-      { id: generateId(), type: 'new_stock_in', date: d, model: 'iPhone 13', quantity: 3, notes: 'Restock', createdAt: Date.now() - 90000 },
-      { id: generateId(), type: 'new_stock_in', date: d, model: 'iPhone 14 Pro Max', quantity: 2, notes: 'New batch', createdAt: Date.now() - 80000 },
-      { id: generateId(), type: 'new_stock_in', date: d, model: 'iPhone 15 Pro Max', quantity: 2, notes: '', createdAt: Date.now() - 70000 },
-      { id: generateId(), type: 'new_stock_in', date: d, model: 'iPhone 12 Pro', quantity: 3, notes: 'Trade-in', createdAt: Date.now() - 60000 },
-      { id: generateId(), type: 'sold_out', date: d, model: 'iPhone 13', quantity: 1, notes: 'Walk-in customer', createdAt: Date.now() - 50000 },
-      { id: generateId(), type: 'service_in', date: d, model: 'iPhone 14 Pro Max', quantity: 1, notes: 'Screen repair', createdAt: Date.now() - 40000 },
-      { id: generateId(), type: 'sent_outside', date: d, model: 'iPhone 12 Pro', quantity: 1, notes: 'Sent to vendor for unlock', createdAt: Date.now() - 30000 },
-      { id: generateId(), type: 'new_stock_in', date: d, model: 'iPhone 11 Pro', quantity: 1, notes: '', createdAt: Date.now() - 20000 },
-      { id: generateId(), type: 'new_stock_in', date: d, model: 'iPhone 13 Pro Max', quantity: 2, notes: '', createdAt: Date.now() - 10000 },
-      { id: generateId(), type: 'new_stock_in', date: d, model: 'iPhone 15 Pro', quantity: 3, notes: '', createdAt: Date.now() },
-    ];
-    saveMovements(movements);
   }
 
   // ── Start ──────────────────────────────────────────────────
