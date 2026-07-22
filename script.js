@@ -3,6 +3,35 @@
    Application Logic — Persistent Inventory System
    ============================================================ */
 
+//resat btn
+  document
+    .getElementById("resetBtn")
+    .addEventListener("click", function () {
+      const confirmDelete = confirm(
+        "Are you sure?\n\nThis will permanently delete all saved data from this device."
+      );
+
+      if (confirmDelete) {
+        // Clear browser storage
+        localStorage.clear();
+        sessionStorage.clear();
+
+        // Success message
+        alert("All saved data has been deleted successfully!");
+
+        // Reload the page after 1 second
+        setTimeout(() => {
+          location.reload();
+        }, 1000);
+      }
+    });
+
+//resat btn
+
+
+
+
+
 (function () {
   'use strict';
 
@@ -597,60 +626,7 @@
     doc.line(margin, y, pageWidth - margin, y);
     y += 10;
 
-    // Stock Summary
-    doc.setTextColor(30, 30, 30);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text('Stock Summary', margin, y);
-    y += 8;
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11);
-
-    var summaryRows = [
-      ['Desk Stock', counts.desk.toString()],
-      ['Service Stock', counts.service.toString()],
-      ['Outside Stock', counts.outside.toString()],
-      ['Total Stock', counts.total.toString()],
-    ];
-
-    summaryRows.forEach(function (row) {
-      doc.text(row[0] + '  :', margin, y);
-      doc.setFont('helvetica', 'bold');
-      doc.text(row[1], margin + 55, y);
-      doc.setFont('helvetica', 'normal');
-      y += 7;
-    });
-
-    y += 5;
-
-    // Activity
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text("Today's Activity", margin, y);
-    y += 8;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11);
-
-    var activityRows = [
-      ['New Stock In', summary.newIn.toString()],
-      ['Sold Out', summary.soldOut.toString()],
-      ['Service In', summary.serviceIn.toString()],
-      ['Service Completed', summary.serviceCompleted.toString()],
-      ['Sent Outside', summary.sentOutside.toString()],
-      ['Returned from Outside', summary.returnedOutside.toString()],
-    ];
-
-    activityRows.forEach(function (row) {
-      doc.text(row[0] + '  :', margin, y);
-      doc.setFont('helvetica', 'bold');
-      doc.text(row[1], margin + 55, y);
-      doc.setFont('helvetica', 'normal');
-      y += 7;
-    });
-
-    y += 5;
 
     // Model Wise Stock
     doc.setFont('helvetica', 'bold');
@@ -683,6 +659,75 @@
         y += 7;
       });
     }
+
+ doc.line(margin, y, pageWidth - margin, y);
+    y += 10;
+    
+    // Activity
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text("Today's Activity", margin, y);
+    y += 8;
+
+ doc.line(margin, y, pageWidth - margin, y);
+    y += 10;
+
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+
+    var activityRows = [
+      ['New Stock In', summary.newIn.toString()],
+      ['Sold Out', summary.soldOut.toString()],
+      ['Service In', summary.serviceIn.toString()],
+      ['Service Completed', summary.serviceCompleted.toString()],
+      ['Sent Outside', summary.sentOutside.toString()],
+      ['Returned from Outside', summary.returnedOutside.toString()],
+    ];
+
+    activityRows.forEach(function (row) {
+      doc.text(row[0] + '  :', margin, y);
+      doc.setFont('helvetica', 'bold');
+      doc.text(row[1], margin + 55, y);
+      doc.setFont('helvetica', 'normal');
+      y += 7;
+    });
+
+    y += 5;
+
+
+     doc.line(margin, y, pageWidth - margin, y);
+    y += 10;
+
+        // Stock Summary
+    doc.setTextColor(30, 30, 30);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text('Stock Summary', margin, y);
+    y += 8;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+
+
+     doc.line(margin, y, pageWidth - margin, y);
+    y += 10;
+    var summaryRows = [
+      ['Desk Stock', counts.desk.toString()],
+      ['Service Stock', counts.service.toString()],
+      ['Outside Stock', counts.outside.toString()],
+      ['Total Stock', counts.total.toString()],
+    ];
+
+    summaryRows.forEach(function (row) {
+      doc.text(row[0] + '  :', margin, y);
+      doc.setFont('helvetica', 'bold');
+      doc.text(row[1], margin + 55, y);
+      doc.setFont('helvetica', 'normal');
+      y += 7;
+    });
+
+    y += 5;
 
     // Footer
     var footerY = doc.internal.pageSize.getHeight() - 15;
