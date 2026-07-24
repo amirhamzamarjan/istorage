@@ -312,30 +312,8 @@
               <label class="form-label" for="movementModel">Model Name</label>
               <input type="text" class="form-input" id="movementModel" list="modelSuggestions"
                 placeholder="e.g. iPhone 14 Pro Max" required>
+              <span class="model-hint" id="movementModelHint"></span>
               <datalist id="modelSuggestions">
-                <option value="iPhone 11">
-                <option value="iPhone 11 Pro">
-                <option value="iPhone 11 Pro Max">
-                <option value="iPhone 12">
-                <option value="iPhone 12 Mini">
-                <option value="iPhone 12 Pro">
-                <option value="iPhone 12 Pro Max">
-                <option value="iPhone 13">
-                <option value="iPhone 13 Mini">
-                <option value="iPhone 13 Pro">
-                <option value="iPhone 13 Pro Max">
-                <option value="iPhone 14">
-                <option value="iPhone 14 Plus">
-                <option value="iPhone 14 Pro">
-                <option value="iPhone 14 Pro Max">
-                <option value="iPhone 15">
-                <option value="iPhone 15 Plus">
-                <option value="iPhone 15 Pro">
-                <option value="iPhone 15 Pro Max">
-                <option value="iPhone 16">
-                <option value="iPhone 16 Plus">
-                <option value="iPhone 16 Pro">
-                <option value="iPhone 16 Pro Max">
               </datalist>
             </div>
           </div>
@@ -414,6 +392,7 @@
 
       <!-- Inventory Table -->
       <div class="card card-table">
+        <div class="table-scroll-wrap">
         <table class="data-table" id="inventoryTable">
           <thead>
             <tr>
@@ -428,6 +407,7 @@
           <tbody id="inventoryBody"></tbody>
           <tfoot id="inventoryFooter"></tfoot>
         </table>
+        </div>
         <div class="empty-state" id="inventoryEmpty" style="display:none;">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"
             stroke-linecap="round" stroke-linejoin="round" opacity="0.3">

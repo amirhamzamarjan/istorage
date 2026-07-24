@@ -29,9 +29,6 @@
 //resat btn
 
 
-
-
-
 (function () {
   'use strict';
 
@@ -81,6 +78,17 @@
     var div = document.createElement('div');
     div.appendChild(document.createTextNode(str));
     return div.innerHTML;
+  }
+
+  function formatTime12(createdAt) {
+    var d = new Date(createdAt);
+    var hours = d.getHours();
+    var minutes = d.getMinutes();
+    var ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    var minStr = minutes < 10 ? '0' + minutes : minutes;
+    return hours + ':' + minStr + ' ' + ampm;
   }
 
   // ── Inventory Data Access (Persistent) ─────────────────────
@@ -302,6 +310,45 @@
     return result;
   }
 
+  // ── Filtered Model Lists for Movement Dropdowns ────────────
+  // Returns models that have stock in the required source location
+  function getFilteredModelsForMovement(type) {
+    var inventory = getInventory();
+    var models = [];
+
+    inventory.forEach(function (item) {
+      switch (type) {
+        case 'new_stock_in':
+          // Any existing model can receive new stock
+          models.push(item.model);
+          break;
+        case 'sold_out':
+          // Only models with desk stock > 0
+          if (item.desk > 0) models.push(item.model);
+          break;
+        case 'service_in':
+          // Only models with desk stock > 0
+          if (item.desk > 0) models.push(item.model);
+          break;
+        case 'service_completed':
+          // Only models with service stock > 0
+          if (item.service > 0) models.push(item.model);
+          break;
+        case 'sent_outside':
+          // Only models with desk stock > 0
+          if (item.desk > 0) models.push(item.model);
+          break;
+        case 'returned_outside':
+          // Only models with outside stock > 0
+          if (item.outside > 0) models.push(item.model);
+          break;
+      }
+    });
+
+    models.sort();
+    return models;
+  }
+
   // ── Daily Movements ────────────────────────────────────────
   function getDailyMovements(date) {
     date = date || today();
@@ -325,6 +372,62 @@
       }
     });
     return s;
+  }
+
+  // Calculate opening stock for a given date by reversing all movements on and after that date
+  function getOpeningStock(date) {
+    date = date || today();
+    var currentCounts = getStockCounts();
+    var movements = getMovements();
+
+    // We need to undo all movements from this date onwards to get opening stock
+    var desk = currentCounts.desk;
+    var service = currentCounts.service;
+    var outside = currentCounts.outside;
+
+    // Get all movements on or after the date, sorted by date desc, then createdAt desc
+    var relevantMoves = movements.filter(function (m) {
+      return m.date >= date;
+    }).sort(function (a, b) {
+      if (b.date !== a.date) return b.date.localeCompare(a.date);
+      return b.createdAt - a.createdAt;
+    });
+
+    // Reverse each movement
+    relevantMoves.forEach(function (m) {
+      var qty = m.quantity;
+      switch (m.type) {
+        case 'new_stock_in':
+          desk -= qty;
+          break;
+        case 'sold_out':
+          desk += qty;
+          break;
+        case 'service_in':
+          desk += qty;
+          service -= qty;
+          break;
+        case 'service_completed':
+          service += qty;
+          desk -= qty;
+          break;
+        case 'sent_outside':
+          desk += qty;
+          outside -= qty;
+          break;
+        case 'returned_outside':
+          outside += qty;
+          desk -= qty;
+          break;
+      }
+    });
+
+    return {
+      desk: Math.max(0, desk),
+      service: Math.max(0, service),
+      outside: Math.max(0, outside),
+      total: Math.max(0, desk) + Math.max(0, service) + Math.max(0, outside),
+    };
   }
 
   // ── Toast Notification ─────────────────────────────────────
@@ -385,7 +488,10 @@
 
     if (sectionName === 'dashboard') renderDashboard();
     if (sectionName === 'inventory') renderInventoryTable();
-    if (sectionName === 'movement') renderMovementLog();
+    if (sectionName === 'movement') {
+      renderMovementLog();
+      refreshFilteredDatalist();
+    }
     if (sectionName === 'report') renderReportPreview();
   }
 
@@ -424,12 +530,13 @@
         else dotClass += 'move';
 
         var sign = (m.type === 'sold_out' || m.type === 'service_in' || m.type === 'sent_outside') ? '-' : '+';
+        var timeStr = formatTime12(m.createdAt);
         html +=
           '<div class="activity-item">' +
           '<div class="activity-dot ' + dotClass + '"></div>' +
           '<div class="activity-info">' +
           '<div class="activity-text">' + MOVEMENT_LABELS[m.type] + ' — ' + escapeHtml(m.model) + '</div>' +
-          (m.notes ? '<div class="activity-meta">' + escapeHtml(m.notes) + '</div>' : '') +
+          '<div class="activity-meta">' + timeStr + (m.notes ? ' · ' + escapeHtml(m.notes) : '') + '</div>' +
           '</div>' +
           '<div class="activity-qty">' + sign + m.quantity + '</div>' +
           '</div>';
@@ -454,12 +561,13 @@
 
     var html = '';
     daily.slice().reverse().forEach(function (m) {
+      var timeStr = formatTime12(m.createdAt);
       html +=
         '<div class="movement-log-item">' +
         '<span class="movement-type-badge badge-' + m.type + '">' + MOVEMENT_LABELS[m.type] + '</span>' +
         '<div class="movement-log-info">' +
         '<div class="movement-log-model">' + escapeHtml(m.model) + '</div>' +
-        (m.notes ? '<div class="movement-log-notes">' + escapeHtml(m.notes) + '</div>' : '') +
+        '<div class="movement-log-notes">' + timeStr + (m.notes ? ' · ' + escapeHtml(m.notes) : '') + '</div>' +
         '</div>' +
         '<div class="movement-log-qty">' + m.quantity + '</div>' +
         '<button class="movement-log-delete" data-id="' + m.id + '" title="Delete">' +
@@ -545,44 +653,102 @@
     var counts = getStockCounts();
     var summary = getDailySummary(reportDate);
     var modelInv = getModelInventory().filter(function (m) { return m.total > 0; });
+    var openingStock = getOpeningStock(reportDate);
+    var totalIncoming = summary.newIn + summary.serviceCompleted + summary.returnedOutside;
+    var totalOutgoing = summary.soldOut + summary.serviceIn + summary.sentOutside;
+    var closingStock = openingStock.total + totalIncoming - totalOutgoing;
+    if (closingStock < 0) closingStock = 0;
 
     var html =
       '<div class="report-header">' +
+      '<div class="report-logo">iS</div>' +
       '<h2>iStorage</h2>' +
       '<p>Daily Inventory Report</p>' +
+      '<p class="report-date-line">' + formatDateFull(reportDate) + '</p>' +
       '</div>' +
 
+      // Executive Summary
       '<div class="report-section">' +
-      '<h3>Stock Summary — ' + formatDateFull(reportDate) + '</h3>' +
-      '<div class="report-row"><span class="report-row-label">Desk Stock</span><span class="report-row-value">' + counts.desk + '</span></div>' +
-      '<div class="report-row"><span class="report-row-label">Service Stock</span><span class="report-row-value">' + counts.service + '</span></div>' +
-      '<div class="report-row"><span class="report-row-label">Outside Stock</span><span class="report-row-value">' + counts.outside + '</span></div>' +
-      '<div class="report-row report-row--total"><span class="report-row-label">Total Stock</span><span class="report-row-value">' + counts.total + '</span></div>' +
+      '<h3>Executive Summary</h3>' +
+      '<div class="report-summary-box">' +
+      '<div class="report-summary-grid">' +
+      '<div class="report-summary-item"><span class="rs-label">Total Stock</span><span class="rs-value">' + counts.total + '</span></div>' +
+      '<div class="report-summary-item"><span class="rs-label">Desk Stock</span><span class="rs-value">' + counts.desk + '</span></div>' +
+      '<div class="report-summary-item"><span class="rs-label">Service</span><span class="rs-value">' + counts.service + '</span></div>' +
+      '<div class="report-summary-item"><span class="rs-label">Outside</span><span class="rs-value">' + counts.outside + '</span></div>' +
+      '<div class="report-summary-item"><span class="rs-label">Sold Today</span><span class="rs-value">' + summary.soldOut + '</span></div>' +
+      '<div class="report-summary-item"><span class="rs-label">New In</span><span class="rs-value">' + summary.newIn + '</span></div>' +
+      '</div>' +
+      '</div>' +
       '</div>' +
 
+      // Stock Movement Timeline
       '<div class="report-section">' +
-      '<h3>Today\'s Activity</h3>' +
-      '<div class="report-activity-item"><span>New Stock In</span><span>' + summary.newIn + '</span></div>' +
-      '<div class="report-activity-item"><span>Sold Out</span><span>' + summary.soldOut + '</span></div>' +
-      '<div class="report-activity-item"><span>Service In</span><span>' + summary.serviceIn + '</span></div>' +
-      '<div class="report-activity-item"><span>Service Completed</span><span>' + summary.serviceCompleted + '</span></div>' +
-      '<div class="report-activity-item"><span>Sent Outside</span><span>' + summary.sentOutside + '</span></div>' +
-      '<div class="report-activity-item"><span>Returned from Outside</span><span>' + summary.returnedOutside + '</span></div>' +
-      '</div>' +
+      '<h3>Stock Movement Timeline</h3>' +
+      '<div class="report-timeline">';
 
-      '<div class="report-section">' +
-      '<h3>Model Wise Stock</h3>';
-
-    modelInv.forEach(function (item) {
-      html += '<div class="report-row"><span class="report-row-label">' + escapeHtml(item.model) + '</span><span class="report-row-value">' + item.total + '</span></div>';
-    });
-
-    if (modelInv.length === 0) {
-      html += '<div class="report-row"><span class="report-row-label" style="color:var(--text-tertiary)">No stock records</span><span class="report-row-value">—</span></div>';
+    var dayMovements = getDailyMovements(reportDate);
+    if (dayMovements.length === 0) {
+      html += '<div class="report-timeline-empty">No activity recorded for this date</div>';
+    } else {
+      dayMovements.forEach(function (m) {
+        html +=
+          '<div class="report-timeline-item">' +
+          '<div class="report-timeline-time">' + formatTime12(m.createdAt) + '</div>' +
+          '<div class="report-timeline-dot"></div>' +
+          '<div class="report-timeline-content">' +
+          MOVEMENT_LABELS[m.type] + ' (' + escapeHtml(m.model) + ' × ' + m.quantity + ')' +
+          (m.notes ? '<div class="report-timeline-notes">' + escapeHtml(m.notes) + '</div>' : '') +
+          '</div>' +
+          '</div>';
+      });
     }
 
-    html +=
+    html += '</div></div>' +
+
+      // Model Wise Inventory
+      '<div class="report-section">' +
+      '<h3>Model Wise Inventory</h3>' +
+      '<table class="report-table">' +
+      '<thead><tr><th>Model</th><th>Desk</th><th>Service</th><th>Outside</th><th>Total</th></tr></thead>' +
+      '<tbody>';
+
+    if (modelInv.length === 0) {
+      html += '<tr><td colspan="5" style="text-align:center;color:var(--text-tertiary);font-style:italic;">No stock records</td></tr>';
+    } else {
+      modelInv.forEach(function (item) {
+        html +=
+          '<tr>' +
+          '<td>' + escapeHtml(item.model) + '</td>' +
+          '<td>' + item.desk + '</td>' +
+          '<td>' + item.service + '</td>' +
+          '<td>' + item.outside + '</td>' +
+          '<td><strong>' + item.total + '</strong></td>' +
+          '</tr>';
+      });
+      html +=
+        '<tr class="report-table-total">' +
+        '<td><strong>Grand Total</strong></td>' +
+        '<td><strong>' + counts.desk + '</strong></td>' +
+        '<td><strong>' + counts.service + '</strong></td>' +
+        '<td><strong>' + counts.outside + '</strong></td>' +
+        '<td><strong>' + counts.total + '</strong></td>' +
+        '</tr>';
+    }
+
+    html += '</tbody></table></div>' +
+
+      // Daily Summary
+      '<div class="report-section">' +
+      '<h3>Daily Summary</h3>' +
+      '<div class="report-daily-summary">' +
+      '<div class="report-ds-row"><span>Opening Stock</span><span>' + openingStock.total + '</span></div>' +
+      '<div class="report-ds-row report-ds-in"><span>Total Incoming</span><span>+' + totalIncoming + '</span></div>' +
+      '<div class="report-ds-row report-ds-out"><span>Total Outgoing</span><span>-' + totalOutgoing + '</span></div>' +
+      '<div class="report-ds-row report-ds-total"><span>Closing Stock</span><span>' + closingStock + '</span></div>' +
       '</div>' +
+      '</div>' +
+
       '<div class="report-footer">' +
       '<p>Generated Automatically — iStorage Inventory System</p>' +
       '</div>';
@@ -603,141 +769,285 @@
     var counts = getStockCounts();
     var summary = getDailySummary(reportDate);
     var modelInv = getModelInventory().filter(function (m) { return m.total > 0; });
-    var pageWidth = doc.internal.pageSize.getWidth();
-    var margin = 20;
-    var y = 20;
+    var openingStock = getOpeningStock(reportDate);
+    var totalIncoming = summary.newIn + summary.serviceCompleted + summary.returnedOutside;
+    var totalOutgoing = summary.soldOut + summary.serviceIn + summary.sentOutside;
+    var closingStock = openingStock.total + totalIncoming - totalOutgoing;
+    if (closingStock < 0) closingStock = 0;
 
-    // Header
+    var pageWidth = doc.internal.pageSize.getWidth();
+    var pageHeight = doc.internal.pageSize.getHeight();
+    var margin = 20;
+    var contentWidth = pageWidth - 2 * margin;
+    var y = 15;
+
+    // Helper to check for page break
+    function checkPageBreak(neededSpace) {
+      if (y + neededSpace > pageHeight - 25) {
+        doc.addPage();
+        y = 20;
+        return true;
+      }
+      return false;
+    }
+
+    // ─── HEADER ───
+    // Logo box
+    var logoSize = 12;
+    var logoX = margin;
+    doc.setFillColor(29, 29, 31);
+    doc.roundedRect(logoX, y, logoSize, logoSize, 2, 2, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(24);
-    doc.text('iStorage', pageWidth / 2, y, { align: 'center' });
+    doc.setFontSize(7);
+    doc.setTextColor(255, 255, 255);
+    doc.text('iS', logoX + logoSize / 2, y + logoSize / 2 + 1.5, { align: 'center' });
+
+    // Shop name
+    doc.setTextColor(29, 29, 31);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(22);
+    doc.text('iStorage', logoX + logoSize + 4, y + logoSize / 2 + 1.5);
+
+    // Right side: date info
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(110, 110, 115);
+    doc.text('Daily Inventory Report', pageWidth - margin, y + 4, { align: 'right' });
+    doc.text(formatDateFull(reportDate), pageWidth - margin, y + 9, { align: 'right' });
+
+    y += logoSize + 6;
+
+    // Separator
+    doc.setDrawColor(29, 29, 31);
+    doc.setLineWidth(0.4);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 3;
+
+    // Prepared by
+    doc.setFontSize(8);
+    doc.setTextColor(140, 140, 145);
+    doc.text('Prepared by: Accounts Manager', margin, y + 3);
+    var now = new Date();
+    var timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+    doc.text('Generated at: ' + timeStr, pageWidth - margin, y + 3, { align: 'right' });
     y += 8;
 
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(120, 120, 120);
-    doc.text('Daily Inventory Report', pageWidth / 2, y, { align: 'center' });
-    y += 6;
-    doc.text('Date: ' + formatDateFull(reportDate), pageWidth / 2, y, { align: 'center' });
-    y += 4;
+    // ─── EXECUTIVE SUMMARY BOX ───
+    doc.setFillColor(245, 245, 247);
+    doc.setDrawColor(200, 200, 205);
+    doc.setLineWidth(0.2);
+    var boxY = y;
+    var boxHeight = 28;
+    doc.roundedRect(margin, boxY, contentWidth, boxHeight, 3, 3, 'FD');
 
-    doc.setDrawColor(30, 30, 30);
-    doc.setLineWidth(0.5);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 10;
+    // Box title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(29, 29, 31);
+    doc.text('Executive Summary', margin + 5, boxY + 6);
 
+    // Summary items in a 3x2 grid
+    var gridStartY = boxY + 12;
+    var colWidth = contentWidth / 3;
+    var summaryItems = [
+      { label: 'Total Stock', value: counts.total.toString() },
+      { label: 'Desk Stock', value: counts.desk.toString() },
+      { label: 'Service', value: counts.service.toString() },
+      { label: 'Outside', value: counts.outside.toString() },
+      { label: 'Sold Today', value: summary.soldOut.toString() },
+      { label: 'New In', value: summary.newIn.toString() },
+    ];
 
+    summaryItems.forEach(function (item, i) {
+      var col = i % 3;
+      var row = Math.floor(i / 3);
+      var x = margin + 5 + col * colWidth;
+      var iy = gridStartY + row * 8;
 
-    // Model Wise Stock
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(110, 110, 115);
+      doc.text(item.label, x, iy);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(29, 29, 31);
+      doc.text(item.value, x, iy + 5);
+    });
+
+    y = boxY + boxHeight + 8;
+
+    // ─── STOCK MOVEMENT TIMELINE ───
+    checkPageBreak(30);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text('Model Wise Stock', margin, y);
-    y += 8;
-    doc.setFontSize(11);
+    doc.setTextColor(29, 29, 31);
+    doc.text('Stock Movement Timeline', margin, y);
+    y += 3;
+    doc.setDrawColor(200, 200, 205);
+    doc.setLineWidth(0.2);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 5;
+
+    var dayMovements = getDailyMovements(reportDate);
+    if (dayMovements.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.setTextColor(170, 170, 175);
+      doc.text('No activity recorded for this date', margin, y);
+      y += 8;
+    } else {
+      dayMovements.forEach(function (m) {
+        checkPageBreak(8);
+
+        // Time
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(110, 110, 115);
+        doc.text(formatTime12(m.createdAt), margin, y);
+
+        // Dot
+        doc.setFillColor(29, 29, 31);
+        doc.circle(margin + 38, y - 1.2, 1.2, 'F');
+
+        // Activity text
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(29, 29, 31);
+        doc.text(MOVEMENT_LABELS[m.type] + ' (' + m.model + ' × ' + m.quantity + ')', margin + 42, y);
+
+        y += 5.5;
+      });
+      y += 3;
+    }
+
+    // ─── MODEL WISE INVENTORY TABLE ───
+    checkPageBreak(30);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(29, 29, 31);
+    doc.text('Model Wise Inventory', margin, y);
+    y += 3;
+    doc.setDrawColor(200, 200, 205);
+    doc.setLineWidth(0.2);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 5;
 
     if (modelInv.length === 0) {
       doc.setFont('helvetica', 'italic');
-      doc.setTextColor(150, 150, 150);
+      doc.setFontSize(9);
+      doc.setTextColor(170, 170, 175);
       doc.text('No stock records found.', margin, y);
-      doc.setTextColor(30, 30, 30);
-      y += 7;
+      y += 8;
     } else {
-      doc.setFont('helvetica', 'bold');
-      doc.text('Model', margin, y);
-      doc.text('Qty', pageWidth - margin, y, { align: 'right' });
-      y += 3;
-      doc.setLineWidth(0.2);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 5;
+      // Table header
+      var colX = [margin, margin + 62, margin + 82, margin + 105, margin + 130];
+      var headers = ['Model', 'Desk', 'Service', 'Outside', 'Total'];
 
-      doc.setFont('helvetica', 'normal');
-      modelInv.forEach(function (item) {
-        doc.text(item.model, margin, y);
-        doc.setFont('helvetica', 'bold');
-        doc.text(item.total.toString(), pageWidth - margin, y, { align: 'right' });
-        doc.setFont('helvetica', 'normal');
-        y += 7;
+      doc.setFillColor(245, 245, 247);
+      doc.rect(margin, y - 3.5, contentWidth, 7, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(110, 110, 115);
+      headers.forEach(function (h, i) {
+        var align = i === 0 ? 'left' : 'center';
+        doc.text(h, colX[i], y, { align: align });
       });
+      y += 3;
+      doc.setDrawColor(200, 200, 205);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 4;
+
+      // Table rows
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      modelInv.forEach(function (item) {
+        checkPageBreak(6);
+        doc.setTextColor(29, 29, 31);
+        doc.text(item.model, colX[0], y);
+        doc.text(item.desk.toString(), colX[1], y, { align: 'center' });
+        doc.text(item.service.toString(), colX[2], y, { align: 'center' });
+        doc.text(item.outside.toString(), colX[3], y, { align: 'center' });
+        doc.setFont('helvetica', 'bold');
+        doc.text(item.total.toString(), colX[4], y, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        y += 5;
+      });
+
+      // Grand Total
+      doc.setDrawColor(29, 29, 31);
+      doc.setLineWidth(0.3);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 4;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(29, 29, 31);
+      doc.text('Grand Total', colX[0], y);
+      doc.text(counts.desk.toString(), colX[1], y, { align: 'center' });
+      doc.text(counts.service.toString(), colX[2], y, { align: 'center' });
+      doc.text(counts.outside.toString(), colX[3], y, { align: 'center' });
+      doc.text(counts.total.toString(), colX[4], y, { align: 'center' });
+      y += 10;
     }
 
- doc.line(margin, y, pageWidth - margin, y);
-    y += 10;
-    
-    // Activity
+    // ─── DAILY SUMMARY ───
+    checkPageBreak(35);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text("Today's Activity", margin, y);
-    y += 8;
-
- doc.line(margin, y, pageWidth - margin, y);
-    y += 10;
-
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11);
-
-    var activityRows = [
-      ['New Stock In', summary.newIn.toString()],
-      ['Sold Out', summary.soldOut.toString()],
-      ['Service In', summary.serviceIn.toString()],
-      ['Service Completed', summary.serviceCompleted.toString()],
-      ['Sent Outside', summary.sentOutside.toString()],
-      ['Returned from Outside', summary.returnedOutside.toString()],
-    ];
-
-    activityRows.forEach(function (row) {
-      doc.text(row[0] + '  :', margin, y);
-      doc.setFont('helvetica', 'bold');
-      doc.text(row[1], margin + 55, y);
-      doc.setFont('helvetica', 'normal');
-      y += 7;
-    });
-
-    y += 5;
-
-
-     doc.line(margin, y, pageWidth - margin, y);
-    y += 10;
-
-        // Stock Summary
-    doc.setTextColor(30, 30, 30);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text('Stock Summary', margin, y);
-    y += 8;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11);
-
-
-     doc.line(margin, y, pageWidth - margin, y);
-    y += 10;
-    var summaryRows = [
-      ['Desk Stock', counts.desk.toString()],
-      ['Service Stock', counts.service.toString()],
-      ['Outside Stock', counts.outside.toString()],
-      ['Total Stock', counts.total.toString()],
-    ];
-
-    summaryRows.forEach(function (row) {
-      doc.text(row[0] + '  :', margin, y);
-      doc.setFont('helvetica', 'bold');
-      doc.text(row[1], margin + 55, y);
-      doc.setFont('helvetica', 'normal');
-      y += 7;
-    });
-
-    y += 5;
-
-    // Footer
-    var footerY = doc.internal.pageSize.getHeight() - 15;
-    doc.setDrawColor(200, 200, 200);
+    doc.setTextColor(29, 29, 31);
+    doc.text('Daily Summary', margin, y);
+    y += 3;
+    doc.setDrawColor(200, 200, 205);
     doc.setLineWidth(0.2);
-    doc.line(margin, footerY - 5, pageWidth - margin, footerY - 5);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor(170, 170, 170);
-    doc.text('Generated Automatically — iStorage Inventory System', pageWidth / 2, footerY, { align: 'center' });
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 6;
+
+    // Summary box
+    var dsBoxY = y;
+    doc.setFillColor(245, 245, 247);
+    doc.roundedRect(margin, dsBoxY, contentWidth, 30, 3, 3, 'FD');
+
+    var dsItems = [
+      { label: 'Opening Stock', value: openingStock.total.toString(), bold: false },
+      { label: 'Total Incoming', value: '+' + totalIncoming.toString(), bold: false },
+      { label: 'Total Outgoing', value: '-' + totalOutgoing.toString(), bold: false },
+      { label: 'Closing Stock', value: closingStock.toString(), bold: true },
+    ];
+
+    dsItems.forEach(function (item, i) {
+      var iy = dsBoxY + 6 + i * 6;
+      doc.setFont('helvetica', item.bold ? 'bold' : 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(item.bold ? 29 : 110, item.bold ? 29 : 110, item.bold ? 31 : 115);
+      doc.text(item.label, margin + 8, iy);
+      doc.text(item.value, pageWidth - margin - 8, iy, { align: 'right' });
+    });
+
+    // Line under closing
+    doc.setDrawColor(29, 29, 31);
+    doc.setLineWidth(0.3);
+    doc.line(margin + 5, dsBoxY + 25, pageWidth - margin - 5, dsBoxY + 25);
+
+    y = dsBoxY + 35;
+
+    // ─── FOOTER ───
+    // Page numbers
+    var totalPages = doc.internal.getNumberOfPages();
+    for (var i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+
+      // Footer line
+      doc.setDrawColor(200, 200, 205);
+      doc.setLineWidth(0.2);
+      doc.line(margin, pageHeight - 15, pageWidth - margin, pageHeight - 15);
+
+      // Footer text
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(170, 170, 175);
+      doc.text('Generated Automatically — iStorage Inventory System', margin, pageHeight - 10);
+      doc.text('Page ' + i + ' of ' + totalPages, pageWidth - margin, pageHeight - 10, { align: 'right' });
+    }
 
     doc.save('iStorage_Report_' + reportDate + '.pdf');
     showToast('PDF report downloaded successfully');
@@ -751,20 +1061,48 @@
     document.querySelectorAll('.tab').forEach(function (tab) {
       tab.classList.toggle('active', tab.dataset.type === type);
     });
+
+    // Update the filtered datalist for this movement type
+    refreshFilteredDatalist();
+
+    // Update placeholder text based on movement type
+    var modelInput = document.getElementById('movementModel');
+    if (type === 'new_stock_in') {
+      modelInput.placeholder = 'e.g. iPhone 14 Pro Max';
+    } else if (type === 'service_completed') {
+      modelInput.placeholder = 'Select model in Service...';
+    } else if (type === 'returned_outside') {
+      modelInput.placeholder = 'Select model Outside...';
+    } else {
+      modelInput.placeholder = 'Select model from Desk...';
+    }
+    modelInput.value = '';
   }
 
-  // ── Model Datalist Refresh ─────────────────────────────────
-  function refreshModelDatalist() {
-    var inventory = getInventory();
+  // ── Filtered Datalist Refresh ──────────────────────────────
+  // Only shows models that have stock in the required source location
+  function refreshFilteredDatalist() {
+    var currentType = document.getElementById('movementType').value;
+    var models = getFilteredModelsForMovement(currentType);
     var datalist = document.getElementById('modelSuggestions');
-    // Clear existing options
     datalist.innerHTML = '';
-    // Add models from inventory
-    inventory.forEach(function (item) {
+
+    models.forEach(function (model) {
       var opt = document.createElement('option');
-      opt.value = item.model;
+      opt.value = model;
       datalist.appendChild(opt);
     });
+
+    // Update hint text
+    var hintEl = document.getElementById('movementModelHint');
+    if (hintEl) {
+      if (models.length === 0 && currentType !== 'new_stock_in') {
+        hintEl.textContent = 'No models available for this action';
+        hintEl.style.display = '';
+      } else {
+        hintEl.style.display = 'none';
+      }
+    }
   }
 
   // ── Initialize ─────────────────────────────────────────────
@@ -839,7 +1177,7 @@
       document.getElementById('movementNotes').value = '';
 
       // Refresh everywhere
-      refreshModelDatalist();
+      refreshFilteredDatalist();
       renderMovementLog();
       renderDashboard();
     });
@@ -888,6 +1226,7 @@
           showToast('Movement deleted and stock adjusted');
           renderMovementLog();
           renderDashboard();
+          refreshFilteredDatalist();
         }
         hideModal();
       });
@@ -940,7 +1279,7 @@
         }
         hideModal();
         showToast('Model "' + name + '" added successfully');
-        refreshModelDatalist();
+        refreshFilteredDatalist();
         renderInventoryTable();
       });
     });
@@ -968,7 +1307,7 @@
     });
 
     // Initial renders
-    refreshModelDatalist();
+    refreshFilteredDatalist();
     renderDashboard();
     renderReportPreview();
   }
@@ -1035,6 +1374,7 @@
       renderInventoryTable();
       renderDashboard();
       renderReportPreview();
+      refreshFilteredDatalist();
     });
   }
 
@@ -1067,7 +1407,7 @@
       deleteInventoryModel(id);
       hideModal();
       showToast('Model "' + item.model + '" deleted');
-      refreshModelDatalist();
+      refreshFilteredDatalist();
       renderInventoryTable();
       renderDashboard();
       renderReportPreview();
