@@ -877,49 +877,7 @@
 
     y = boxY + boxHeight + 8;
 
-    // ─── STOCK MOVEMENT TIMELINE ───
-    checkPageBreak(30);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(29, 29, 31);
-    doc.text('Stock Movement Timeline', margin, y);
-    y += 3;
-    doc.setDrawColor(200, 200, 205);
-    doc.setLineWidth(0.2);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 5;
 
-    var dayMovements = getDailyMovements(reportDate);
-    if (dayMovements.length === 0) {
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(9);
-      doc.setTextColor(170, 170, 175);
-      doc.text('No activity recorded for this date', margin, y);
-      y += 8;
-    } else {
-      dayMovements.forEach(function (m) {
-        checkPageBreak(8);
-
-        // Time
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
-        doc.setTextColor(110, 110, 115);
-        doc.text(formatTime12(m.createdAt), margin, y);
-
-        // Dot
-        doc.setFillColor(29, 29, 31);
-        doc.circle(margin + 38, y - 1.2, 1.2, 'F');
-
-        // Activity text
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.setTextColor(29, 29, 31);
-        doc.text(MOVEMENT_LABELS[m.type] + ' (' + m.model + ' × ' + m.quantity + ')', margin + 42, y);
-
-        y += 5.5;
-      });
-      y += 3;
-    }
 
     // ─── MODEL WISE INVENTORY TABLE ───
     checkPageBreak(30);
