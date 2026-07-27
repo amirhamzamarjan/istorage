@@ -35,6 +35,7 @@
   // ── Data Keys ──────────────────────────────────────────────
   var KEY_INVENTORY = 'istorage_inventory';
   var KEY_MOVEMENTS = 'istorage_movements';
+  var KEY_UNDO = 'istorage_undo_state';
 
   // ── Movement Type Labels ───────────────────────────────────
   var MOVEMENT_LABELS = {
@@ -273,6 +274,192 @@
       return m.id !== id;
     });
     saveMovements(movements);
+  }
+
+  // ── Undo System ────────────────────────────────────────────
+  function saveUndoState() {
+    var state = {
+      inventory: getInventory(),
+      movements: getMovements(),
+    };
+    localStorage.setItem(KEY_UNDO, JSON.stringify(state));
+    updateUndoButton();
+  }
+
+  function performUndo() {
+    var raw = localStorage.getItem(KEY_UNDO);
+    if (!raw) {
+      showToast('No recent action to undo.', 'error');
+      return;
+    }
+
+    var body =
+      '<p>Do you want to undo the last action?</p>' +
+      '<p style="font-size:13px;color:var(--text-secondary);margin-top:8px;">This will restore inventory and movement data to the state before the most recent action.</p>';
+
+    var footer =
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'modalOverlay\').classList.remove(\'active\')">Cancel</button>' +
+      '<button class="btn btn-primary" id="confirmUndo">Undo</button>';
+
+    showModal('Undo Last Action', body, footer);
+
+    document.getElementById('confirmUndo').addEventListener('click', function () {
+      var state = JSON.parse(localStorage.getItem(KEY_UNDO));
+      if (!state) {
+        showToast('No recent action to undo.', 'error');
+        hideModal();
+        return;
+      }
+
+      // Restore the saved state
+      localStorage.setItem(KEY_INVENTORY, JSON.stringify(state.inventory));
+      localStorage.setItem(KEY_MOVEMENTS, JSON.stringify(state.movements));
+
+      // Clear the undo state
+      localStorage.removeItem(KEY_UNDO);
+
+      hideModal();
+      showToast('Last action has been successfully reverted.');
+      updateUndoButton();
+
+      // Refresh all views
+      renderDashboard();
+      renderMovementLog();
+      renderInventoryTable();
+      renderReportPreview();
+      refreshFilteredDatalist();
+    });
+  }
+
+  function updateUndoButton() {
+    var btn = document.getElementById('undoBtn');
+    if (!btn) return;
+    var hasState = localStorage.getItem(KEY_UNDO) !== null;
+    btn.disabled = !hasState;
+  }
+
+  // ── Download Backup ────────────────────────────────────────
+  function downloadBackup() {
+    var inventory = getInventory();
+    var movements = getMovements();
+
+    var backupData = {
+      inventory: inventory,
+      movements: movements,
+      exportedAt: new Date().toISOString(),
+      version: '1.0',
+    };
+
+    var jsonStr = JSON.stringify(backupData, null, 2);
+    var blob = new Blob([jsonStr], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+
+    var now = new Date();
+    var dateStr = now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0');
+    var timeStr = String(now.getHours()).padStart(2, '0') + '-' +
+      String(now.getMinutes()).padStart(2, '0') + '-' +
+      String(now.getSeconds()).padStart(2, '0');
+    var filename = 'iStorage_Backup_' + dateStr + '_' + timeStr + '.json';
+
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('Backup downloaded: ' + filename);
+  }
+
+  // ── Upload Backup ──────────────────────────────────────────
+  function handleBackupUpload(event) {
+    var file = event.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var data = JSON.parse(e.target.result);
+
+        // Validate structure
+        if (!data || typeof data !== 'object') {
+          showToast('Invalid backup file format.', 'error');
+          return;
+        }
+        if (!Array.isArray(data.inventory)) {
+          showToast('Backup file is missing inventory data.', 'error');
+          return;
+        }
+        if (!Array.isArray(data.movements)) {
+          showToast('Backup file is missing movements data.', 'error');
+          return;
+        }
+
+        // Validate inventory items
+        for (var i = 0; i < data.inventory.length; i++) {
+          var item = data.inventory[i];
+          if (!item.id || !item.model || typeof item.desk !== 'number' ||
+              typeof item.service !== 'number' || typeof item.outside !== 'number') {
+            showToast('Invalid inventory item at index ' + i + '.', 'error');
+            return;
+          }
+        }
+
+        // Validate movement records
+        for (var j = 0; j < data.movements.length; j++) {
+          var mov = data.movements[j];
+          if (!mov.id || !mov.type || !mov.date || !mov.model ||
+              typeof mov.quantity !== 'number') {
+            showToast('Invalid movement record at index ' + j + '.', 'error');
+            return;
+          }
+        }
+
+        // Show confirmation modal
+        var exportDate = data.exportedAt ? formatDateFull(data.exportedAt.slice(0, 10)) : 'Unknown';
+        var body =
+          '<p>Are you sure you want to restore this backup?</p>' +
+          '<div style="background:var(--bg-base);padding:12px;border-radius:8px;font-size:13px;margin:12px 0;">' +
+          '<div><strong>Backup Date:</strong> ' + exportDate + '</div>' +
+          '<div><strong>Models:</strong> ' + data.inventory.length + '</div>' +
+          '<div><strong>Movements:</strong> ' + data.movements.length + '</div>' +
+          '</div>' +
+          '<div class="modal-warning">This will replace all current data. This action cannot be undone.</div>';
+
+        var footer =
+          '<button class="btn btn-ghost" onclick="document.getElementById(\'modalOverlay\').classList.remove(\'active\')">Cancel</button>' +
+          '<button class="btn btn-primary" id="confirmRestore">Replace Data</button>';
+
+        showModal('Restore Backup', body, footer);
+
+        document.getElementById('confirmRestore').addEventListener('click', function () {
+          // Save undo state before restoring
+          saveUndoState();
+
+          // Restore the data
+          localStorage.setItem(KEY_INVENTORY, JSON.stringify(data.inventory));
+          localStorage.setItem(KEY_MOVEMENTS, JSON.stringify(data.movements));
+
+          hideModal();
+          showToast('Backup restored successfully. Reloading...');
+
+          setTimeout(function () {
+            location.reload();
+          }, 1000);
+        });
+
+      } catch (err) {
+        showToast('Failed to parse backup file.', 'error');
+      }
+    };
+
+    reader.readAsText(file);
+
+    // Reset the file input so the same file can be re-uploaded
+    event.target.value = '';
   }
 
   // ── Stock Counts (from persistent inventory) ───────────────
@@ -1096,7 +1283,9 @@
 
     // ── Navigation ──
     document.querySelectorAll('.nav-link').forEach(function (link) {
-      link.addEventListener('click', function () { navigateTo(this.dataset.section); });
+      link.addEventListener('click', function () {
+        if (this.dataset.section) navigateTo(this.dataset.section);
+      });
     });
     document.querySelectorAll('.bottom-nav-item').forEach(function (item) {
       item.addEventListener('click', function () { navigateTo(this.dataset.section); });
@@ -1143,6 +1332,7 @@
       }
 
       // Apply movement to persistent inventory
+      saveUndoState();
       var result = applyMovement(type, model, qty);
       if (!result.success) {
         showToast(result.message, 'error');
@@ -1200,6 +1390,7 @@
       showModal('Delete Movement', body, footer);
 
       document.getElementById('confirmDeleteMovement').addEventListener('click', function () {
+        saveUndoState();
         var rev = reverseMovement(movement.type, movement.model, movement.quantity);
         if (!rev.success) {
           showToast(rev.message, 'error');
@@ -1254,6 +1445,7 @@
           showToast('Please enter a model name', 'error');
           return;
         }
+        saveUndoState();
         var res = addInventoryModel(name);
         if (!res.success) {
           showToast(res.message, 'error');
@@ -1288,7 +1480,20 @@
       window.print();
     });
 
+    // ── Data Management Controls ──
+    document.getElementById('downloadBackupBtn').addEventListener('click', function () {
+      downloadBackup();
+    });
+    document.getElementById('uploadBackupBtn').addEventListener('click', function () {
+      document.getElementById('backupFileInput').click();
+    });
+    document.getElementById('backupFileInput').addEventListener('change', handleBackupUpload);
+    document.getElementById('undoBtn').addEventListener('click', function () {
+      performUndo();
+    });
+
     // Initial renders
+    updateUndoButton();
     refreshFilteredDatalist();
     renderDashboard();
     renderReportPreview();
@@ -1350,6 +1555,7 @@
       var d = document.getElementById('editDesk').value;
       var s = document.getElementById('editService').value;
       var o = document.getElementById('editOutside').value;
+      saveUndoState();
       updateInventoryQuantity(id, d, s, o);
       hideModal();
       showToast('Stock quantities updated for ' + item.model);
@@ -1386,6 +1592,7 @@
     showModal('Delete Model', body, footer);
 
     document.getElementById('confirmDeleteModel').addEventListener('click', function () {
+      saveUndoState();
       deleteInventoryModel(id);
       hideModal();
       showToast('Model "' + item.model + '" deleted');

@@ -214,6 +214,31 @@ table {
   background: #333336;
 }
 
+.nav-link:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.nav-link:disabled svg {
+  stroke: var(--text-secondary);
+}
+
+.sidebar-nav-divider {
+  height: 1px;
+  background: var(--border);
+  margin: var(--space-sm) var(--space-md);
+}
+
+.reset-link {
+  color: var(--error, #c62828);
+}
+
+.reset-link:hover {
+  background: rgba(198, 40, 40, 0.08);
+  color: var(--error, #c62828);
+}
+
 /* Sidebar Footer */
 .sidebar-footer {
   padding: var(--space-lg);
