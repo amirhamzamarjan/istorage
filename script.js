@@ -655,8 +655,21 @@
     var modelInv = getModelInventory().filter(function (m) { return m.total > 0; });
     var openingStock = getOpeningStock(reportDate);
     var totalIncoming = summary.newIn + summary.serviceCompleted + summary.returnedOutside;
-    var totalOutgoing = summary.soldOut + summary.serviceIn + summary.sentOutside;
-    var closingStock = openingStock.total + totalIncoming - totalOutgoing;
+
+    // OLD LOGIC (COMMENTED FOR REFERENCE)
+    // Total Outgoing previously counted Sold Out + Service In + Sent Outside.
+    // This caused Closing Stock to decrease incorrectly because Sent Outside
+    // items are still owned by the business and may be returned later.
+    // var totalOutgoing = summary.soldOut + summary.serviceIn + summary.sentOutside;
+    // var closingStock = openingStock.total + totalIncoming - totalOutgoing;
+
+    // NEW LOGIC
+    // Total Outgoing now counts ONLY Sold Out items — products that have actually
+    // left the business permanently. Sent Outside items are still owned and may be
+    // returned, so they do NOT reduce Closing Stock.
+    // Closing Stock = Opening Stock + Total Incoming - Total Sold Out
+    var totalOutgoing = summary.soldOut;
+    var closingStock = openingStock.total + totalIncoming - summary.soldOut;
     if (closingStock < 0) closingStock = 0;
 
     var html =
@@ -678,6 +691,7 @@
       '<div class="report-summary-item"><span class="rs-label">Outside</span><span class="rs-value">' + counts.outside + '</span></div>' +
       '<div class="report-summary-item"><span class="rs-label">Sold Today</span><span class="rs-value">' + summary.soldOut + '</span></div>' +
       '<div class="report-summary-item"><span class="rs-label">New In</span><span class="rs-value">' + summary.newIn + '</span></div>' +
+      '<div class="report-summary-item"><span class="rs-label">Sent Outside</span><span class="rs-value">' + summary.sentOutside + '</span></div>' +
       '</div>' +
       '</div>' +
       '</div>' +
@@ -745,6 +759,7 @@
       '<div class="report-ds-row"><span>Opening Stock</span><span>' + openingStock.total + '</span></div>' +
       '<div class="report-ds-row report-ds-in"><span>Total Incoming</span><span>+' + totalIncoming + '</span></div>' +
       '<div class="report-ds-row report-ds-out"><span>Total Outgoing</span><span>-' + totalOutgoing + '</span></div>' +
+      '<div class="report-ds-row"><span>Sent Outside</span><span>' + summary.sentOutside + '</span></div>' +
       '<div class="report-ds-row report-ds-total"><span>Closing Stock</span><span>' + closingStock + '</span></div>' +
       '</div>' +
       '</div>' +
@@ -771,8 +786,15 @@
     var modelInv = getModelInventory().filter(function (m) { return m.total > 0; });
     var openingStock = getOpeningStock(reportDate);
     var totalIncoming = summary.newIn + summary.serviceCompleted + summary.returnedOutside;
-    var totalOutgoing = summary.soldOut + summary.serviceIn + summary.sentOutside;
-    var closingStock = openingStock.total + totalIncoming - totalOutgoing;
+
+    // OLD LOGIC (COMMENTED FOR REFERENCE)
+    // var totalOutgoing = summary.soldOut + summary.serviceIn + summary.sentOutside;
+    // var closingStock = openingStock.total + totalIncoming - totalOutgoing;
+
+    // NEW LOGIC
+    // Total Outgoing = Sold Out only (Sent Outside does not reduce Closing Stock)
+    var totalOutgoing = summary.soldOut;
+    var closingStock = openingStock.total + totalIncoming - summary.soldOut;
     if (closingStock < 0) closingStock = 0;
 
     var pageWidth = doc.internal.pageSize.getWidth();
@@ -837,7 +859,7 @@
     doc.setDrawColor(200, 200, 205);
     doc.setLineWidth(0.2);
     var boxY = y;
-    var boxHeight = 28;
+    var boxHeight = 38; // increased for 3 rows (was 28 for 2 rows)
     doc.roundedRect(margin, boxY, contentWidth, boxHeight, 3, 3, 'FD');
 
     // Box title
@@ -846,7 +868,7 @@
     doc.setTextColor(29, 29, 31);
     doc.text('Executive Summary', margin + 5, boxY + 6);
 
-    // Summary items in a 3x2 grid
+    // Summary items in a 3x3 grid
     var gridStartY = boxY + 12;
     var colWidth = contentWidth / 3;
     var summaryItems = [
@@ -856,6 +878,7 @@
       { label: 'Outside', value: counts.outside.toString() },
       { label: 'Sold Today', value: summary.soldOut.toString() },
       { label: 'New In', value: summary.newIn.toString() },
+      { label: 'Sent Outside', value: summary.sentOutside.toString() },
     ];
 
     summaryItems.forEach(function (item, i) {
@@ -963,12 +986,13 @@
     // Summary box
     var dsBoxY = y;
     doc.setFillColor(245, 245, 247);
-    doc.roundedRect(margin, dsBoxY, contentWidth, 30, 3, 3, 'FD');
+    doc.roundedRect(margin, dsBoxY, contentWidth, 36, 3, 3, 'FD');
 
     var dsItems = [
       { label: 'Opening Stock', value: openingStock.total.toString(), bold: false },
       { label: 'Total Incoming', value: '+' + totalIncoming.toString(), bold: false },
       { label: 'Total Outgoing', value: '-' + totalOutgoing.toString(), bold: false },
+      { label: 'Sent Outside', value: summary.sentOutside.toString(), bold: false },
       { label: 'Closing Stock', value: closingStock.toString(), bold: true },
     ];
 
@@ -984,9 +1008,9 @@
     // Line under closing
     doc.setDrawColor(29, 29, 31);
     doc.setLineWidth(0.3);
-    doc.line(margin + 5, dsBoxY + 25, pageWidth - margin - 5, dsBoxY + 25);
+    doc.line(margin + 5, dsBoxY + 31, pageWidth - margin - 5, dsBoxY + 31);
 
-    y = dsBoxY + 35;
+    y = dsBoxY + 41;
 
     // ─── FOOTER ───
     // Page numbers
